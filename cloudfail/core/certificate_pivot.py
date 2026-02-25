@@ -11,7 +11,7 @@ Passive CT Sources (no API key required):
   7. Wayback Machine CDX    — historical domain data
 
 Paid/key-required sources:
-  8. CensysHosts v2 REST API
+  8. Censys Platform API v3 (POST search with Bearer token)
   9. Shodan
   10. SecurityTrails
 """
@@ -331,72 +331,92 @@ def crtsh_subdomains(domain: str) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Censys v2  (direct REST API, no SDK required)
+# Censys Platform API v3 (direct POST to search endpoint)
 # ---------------------------------------------------------------------------
 
 def censys_hosts(
     domain: str,
-    api_id: Optional[str] = None,
-    api_secret: Optional[str] = None,
+    api_token: Optional[str] = None,
 ) -> List[str]:
     """
-    Search Censys v2 REST API for hosts with TLS certificates matching *domain*.
+    Search Censys Platform API v3 for hosts with TLS certificates matching *domain*.
 
-    Uses HTTP Basic Auth with api_id:api_secret as documented at:
-    https://search.censys.io/api
+    Uses Bearer Token authentication as documented at:
+    https://docs.censys.com/reference/get-started
+
+    New API (2024+):
+      - URL: https://api.platform.censys.io/v3/global/search/query
+      - Method: POST with JSON body
+      - Auth: Bearer token (Personal Access Token)
 
     Handles:
-      - 302 redirects (follow automatically)
       - 401/403 auth errors (skip gracefully)
+      - 422 query errors
       - 429 rate limits (stop pagination)
-      - Pagination up to 5 pages
+      - Pagination using page_token
     """
-    if not (api_id and api_secret):
+    if not api_token:
         return []
 
     logger.info(f"[Censys] Searching for hosts matching {domain}…")
     ips: List[str] = []
 
     try:
-        import base64
-        creds = base64.b64encode(f"{api_id}:{api_secret}".encode()).decode()
         auth_header = {
-            "Authorization": f"Basic {creds}",
+            "Authorization": f"Bearer {api_token}",
             "Accept": "application/json",
+            "Content-Type": "application/json",
         }
 
-        cursor: Optional[str] = None
+        page_token: Optional[str] = None
         pages_fetched = 0
         max_pages = 5
 
-        while pages_fetched < max_pages:
-            params: dict = {
-                "q": (
-                    f'services.tls.certificates.leaf_data.subject.common_name: "{domain}" '
-                    f'or services.tls.certificates.leaf_data.names: "{domain}"'
-                ),
-                "per_page": 100,
-                "fields": ["ip"],
-            }
-            if cursor:
-                params["cursor"] = cursor
+        # Query for hosts with certificates containing the target domain
+        query = f'services.tls.certificates.leaf_data.names: "{domain}"'
 
-            resp = http_client.get(
-                "https://search.censys.io/api/v2/hosts/search",
-                params=params,
+        while pages_fetched < max_pages:
+            body = {
+                "query": query,
+                "page_size": 100,
+                "fields": ["host.ip"],
+            }
+            if page_token:
+                body["page_token"] = page_token
+
+            resp = http_client.post(
+                "https://api.platform.censys.io/v3/global/search/query",
+                json=body,
                 headers=auth_header,
-                timeout=25,
-                allow_redirects=True,
+                timeout=30,
             )
 
             if resp.status_code == 401:
                 logger.warning(
                     "[Censys] Authentication failed (401). "
-                    "Use Censys v2 credentials from https://search.censys.io/account/api"
+                    "Generate a Personal Access Token at: https://accounts.censys.io/settings/personal-access-tokens"
                 )
                 break
             elif resp.status_code == 403:
-                logger.warning("[Censys] Access denied (403). Check plan at search.censys.io")
+                error_detail = ""
+                try:
+                    error_data = resp.json()
+                    error_detail = error_data.get("detail", "")
+                except:
+                    pass
+                
+                if "Free users" in error_detail or "organization ID" in error_detail:
+                    logger.warning(
+                        "[Censys] Free tier limitation: Search API requires a paid plan (Starter/Enterprise).\n"
+                        "         Free users can only use lookup endpoints via the web UI.\n"
+                        "         Upgrade at: https://censys.com/pricing\n"
+                        "         CloudFail will continue with other free sources..."
+                    )
+                else:
+                    logger.warning(f"[Censys] Access denied (403): {error_detail or 'Check permissions'}")
+                break
+            elif resp.status_code == 422:
+                logger.warning(f"[Censys] Invalid query (422): {resp.text[:200]}")
                 break
             elif resp.status_code == 429:
                 logger.warning("[Censys] Rate limited (429). Stopping pagination.")
@@ -406,20 +426,20 @@ def censys_hosts(
                 break
 
             data = resp.json()
-            hits = data.get("result", {}).get("hits", [])
+            hits = data.get("results", [])
+            
             for hit in hits:
-                ip = hit.get("ip")
+                # Extract IP from nested structure
+                host_data = hit.get("host", {})
+                ip = host_data.get("ip")
                 if ip:
                     ips.append(ip)
 
-            next_cursor = (
-                data.get("result", {})
-                    .get("links", {})
-                    .get("next")
-            )
-            if not next_cursor or not hits:
+            # Check for pagination token
+            next_token = data.get("page_token")
+            if not next_token or not hits:
                 break
-            cursor = next_cursor
+            page_token = next_token
             pages_fetched += 1
 
     except Exception as exc:
@@ -441,8 +461,15 @@ def shodan_hosts(domain: str, api_key: Optional[str] = None) -> List[str]:
 
     logger.info(f"[Shodan] Searching for hosts matching {domain}…")
     ips: List[str] = []
+    
     try:
-        resp = http_client.get(
+        # Shodan API is behind Cloudflare - use minimal headers to avoid blocking
+        import requests as _req
+        import time
+        time.sleep(0.5)  # Small delay to avoid triggering rate limits
+        
+        # Try primary query
+        resp = _req.get(
             "https://api.shodan.io/shodan/host/search",
             params={
                 "key": api_key,
@@ -457,6 +484,15 @@ def shodan_hosts(domain: str, api_key: Optional[str] = None) -> List[str]:
                     ips.append(ip)
         elif resp.status_code == 401:
             logger.warning("[Shodan] Invalid API key (401).")
+        elif resp.status_code == 403:
+            # Check if it's Cloudflare blocking
+            if "cloudflare" in resp.text.lower() or "<!DOCTYPE html>" in resp.text:
+                logger.warning(
+                    "[Shodan] Request blocked by Cloudflare protection (403). "
+                    "Try again after a few seconds or use Shodan web interface."
+                )
+            else:
+                logger.warning("[Shodan] Access forbidden (403). Check your API key permissions.")
         elif resp.status_code == 429:
             logger.warning("[Shodan] Rate limited (429).")
         else:

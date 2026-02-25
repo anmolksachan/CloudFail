@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Examples:\n"
             "  python -m cloudfail -t example.com --confirm-scope\n"
             "  python -m cloudfail -t example.com --confirm-scope --no-verify-ssl\n"
-            "  python -m cloudfail -t example.com --censys-api-id ID --censys-api-secret SECRET --confirm-scope\n"
+            "  python -m cloudfail -t example.com --censys-api-token YOUR_TOKEN --confirm-scope\n"
             "  python -m cloudfail -t example.com --passive-only --output json --output-file out.json --confirm-scope\n"
             "  python -m cloudfail -t example.com --tor --confirm-scope\n"
             "  python -m cloudfail -t example.com --debug --confirm-scope\n"
@@ -69,8 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
                    help="[REQUIRED] Confirm you have authorisation to test this target")
 
     # API keys
-    p.add_argument("--censys-api-id",      metavar="ID",     help="Censys v2 API ID (from search.censys.io/account/api)")
-    p.add_argument("--censys-api-secret",  metavar="SECRET", help="Censys v2 API secret")
+    p.add_argument("--censys-api-token",   metavar="TOKEN",  help="Censys Platform API Personal Access Token (PAID PLAN REQUIRED - free tier cannot search)")
     p.add_argument("--securitytrails-api", metavar="KEY",    help="SecurityTrails API key")
     p.add_argument("--shodan-api",         metavar="KEY",    help="Shodan API key")
 
@@ -167,8 +166,7 @@ def phase_init(target: str, cf_ranges: List[str]) -> ScanResult:
 
 def phase_passive(
     result: ScanResult,
-    censys_id: Optional[str],
-    censys_secret: Optional[str],
+    censys_token: Optional[str],
     shodan_key: Optional[str],
     st_key: Optional[str],
     cf_ranges: List[str],
@@ -179,13 +177,13 @@ def phase_passive(
     names = certificate_pivot.crtsh_subdomains(result.target)
     result.crtsh_names = names
 
-    # Censys v2 (API key required)
-    if censys_id and censys_secret:
-        cips = certificate_pivot.censys_hosts(result.target, censys_id, censys_secret)
+    # Censys Platform API v3 (Personal Access Token required)
+    if censys_token:
+        cips = certificate_pivot.censys_hosts(result.target, censys_token)
         result.censys_ips = cips
         result.all_candidate_ips.update(cips)
     else:
-        logger.info("[Censys] No API credentials — skipping.")
+        logger.info("[Censys] No API token — skipping.")
 
     # Shodan (API key required)
     if shodan_key:
@@ -436,8 +434,7 @@ def main() -> None:
 
     phase_passive(
         result,
-        censys_id=args.censys_api_id,
-        censys_secret=args.censys_api_secret,
+        censys_token=args.censys_api_token,
         shodan_key=args.shodan_api,
         st_key=args.securitytrails_api,
         cf_ranges=cf_ranges,

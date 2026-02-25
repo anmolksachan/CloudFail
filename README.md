@@ -24,7 +24,7 @@ CloudFail discovers the real origin IP address(es) behind a Cloudflare-protected
 │    │     ┌──────────────────────────────────────────────────┐      │
 │    │     │  Free (no API key)         Paid (API key)        │      │
 │    │     │  ─────────────────         ───────────────────── │      │
-│    │     │  CertSpotter               Censys v2 REST API    │      │
+│    │     │  CertSpotter               Censys Platform v3    │      │
 │    │     │  crt.sh (retry+backoff)    Shodan                │      │
 │    │     │  AnubisDB                  SecurityTrails        │      │
 │    │     │  RapidDNS                                        │      │
@@ -64,8 +64,8 @@ CloudFail discovers the real origin IP address(es) behind a Cloudflare-protected
 | HackerTarget | Passive DNS | No | 100/day | Also used for ASN lookup |
 | AlienVault OTX | Passive DNS | No | 429-aware | Backoff+retry on rate limit |
 | ViewDNS.info | IP history | No | None | HTML regex extraction |
-| Censys v2 | TLS cert search | **Yes** | Varies | REST API direct |
-| Shodan | TLS cert search | **Yes** | Varies | REST API |
+| Censys Platform API | TLS cert search | **Yes** | Varies | **Requires Starter plan ($99+/mo)** |
+| Shodan | TLS cert search | **Yes** | Varies | REST API (free tier available) |
 | SecurityTrails | Subdomain enum | **Yes** | Varies | REST API |
 
 ---
@@ -107,8 +107,7 @@ python -m cloudfail -t example.com --confirm-scope
 
 ```bash
 python -m cloudfail -t example.com \
-  --censys-api-id YOUR_ID \
-  --censys-api-secret YOUR_SECRET \
+  --censys-api-token YOUR_TOKEN \
   --shodan-api YOUR_KEY \
   --securitytrails-api YOUR_KEY \
   --confirm-scope
@@ -171,8 +170,7 @@ python -m cloudfail -t example.com --quiet --output json --confirm-scope
 | `--subdomains FILE` | Custom wordlist path |
 | `--threads N` | DNS resolver threads (default: 10) |
 | `--update-ranges` | Re-download Cloudflare IP ranges |
-| `--censys-api-id` | Censys v2 API ID |
-| `--censys-api-secret` | Censys v2 API secret |
+| `--censys-api-token` | Censys Platform API Personal Access Token |
 | `--shodan-api` | Shodan API key |
 | `--securitytrails-api` | SecurityTrails API key |
 | `--output text\|json` | Output format (default: text) |
@@ -286,9 +284,9 @@ crt.sh can be slow under load. CloudFail retries automatically (5 attempts, expo
 
 OTX rate limits anonymous access. CloudFail backs off and skips OTX after 3 failures. Other passive DNS sources continue. Consider registering for a free OTX API key.
 
-### `Censys HTTP 302`
+### `Censys authentication errors`
 
-Fixed in v2.0 Enhanced — `allow_redirects=True` is set on the Censys call. Ensure you're using **v2 credentials** from `https://search.censys.io/account/api` (not the legacy app.censys.io keys).
+**Updated for 2026:** Censys now uses the Platform API v3 with Personal Access Tokens (Bearer tokens). Generate your token at `https://accounts.censys.io/settings/personal-access-tokens`. Note: Free users can only use lookup endpoints, not search — you need a Starter or Enterprise plan to search hosts.
 
 ### `No results at all`
 
