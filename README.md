@@ -152,8 +152,10 @@ python -m cloudfail -t example.com --quiet --output json --confirm-scope
 
 ### Demo
 
-<img width="3452" height="846" alt="image" src="https://github.com/user-attachments/assets/d0601083-bdd9-4901-b1a5-59cdcbd97e83" />
-<img width="3442" height="1292" alt="image" src="https://github.com/user-attachments/assets/9f2adccf-9a95-4547-a709-9fd224e18117" />
+<!--<img width="3452" height="846" alt="image" src="https://github.com/user-attachments/assets/d0601083-bdd9-4901-b1a5-59cdcbd97e83" />-->
+<img width="1600" height="509" alt="image" src="https://github.com/user-attachments/assets/c1de6529-b98e-4668-a7d8-e3873267f468" />
+<img width="2194" height="920" alt="image" src="https://github.com/user-attachments/assets/9ffee62d-42d4-415d-8ef1-7ede930089e4" />
+<img width="2350" height="530" alt="image" src="https://github.com/user-attachments/assets/8d2410e6-641e-44c5-9de9-c2a0b42065c2" />
 
 ---
 
